@@ -81,14 +81,16 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
     chown -R postgres:postgres "$DATA_DIR"
     pg_as_postgres "$PG_BIN/initdb -D $PGDATA -E UTF8 --auth-local=trust --auth-host=trust" >/dev/null
 
-    # Small-footprint config (the whole stack shares one container).
+    # Small-footprint config (the whole stack shares one container; on the
+    # 512 MB free plan every megabyte counts - the cgroup OOM killer takes
+    # the whole instance down otherwise).
     cat >> "$PGDATA/postgresql.conf" <<PGCONF
 listen_addresses = '127.0.0.1'
-shared_buffers = 48MB
-effective_cache_size = 128MB
-max_connections = 40
+shared_buffers = 24MB
+effective_cache_size = 64MB
+max_connections = 25
 work_mem = 4MB
-maintenance_work_mem = 32MB
+maintenance_work_mem = 24MB
 PGCONF
     chown postgres:postgres "$PGDATA/postgresql.conf"
 

@@ -16,7 +16,18 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 import requests
-import yt_dlp
+# yt_dlp is imported lazily: it costs ~80 MB of RSS at import time and the
+# all-in-one Render deployment (512 MB free plan) needs the API backend to
+# boot without it. It loads on the first YouTube metadata/download call.
+_YT_DLP = None
+
+
+def _yt_dlp():
+    global _YT_DLP
+    if _YT_DLP is None:
+        import yt_dlp
+        _YT_DLP = yt_dlp
+    return _YT_DLP
 
 from .apify_youtube_downloader import ApifyDownloadError, download_video_via_apify
 from .config import get_config
@@ -338,7 +349,7 @@ def _fetch_video_info_with_ytdlp(
             ydl_opts["_youtube_deadline"] = deadline
             info = extract_video_info(url, ydl_opts)
         else:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with _yt_dlp().YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
 
     return {
@@ -652,7 +663,7 @@ def _download_youtube_video_with_ytdlp(
                 video_id, int(quality) if quality else None
             )
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with _yt_dlp().YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
             logger.info(f"Searching for downloaded file: {video_id}.*")
@@ -685,7 +696,7 @@ def _download_youtube_video_with_ytdlp(
 
             logger.warning("No video file found after download attempt %s", attempt + 1)
 
-        except yt_dlp.utils.DownloadError as e:
+        except _yt_dlp().utils.DownloadError as e:
             # Retrying the same datacenter cannot change a country restriction.
             # Let independent download providers try their own regions instead.
             if is_geo_restricted_error(e):
