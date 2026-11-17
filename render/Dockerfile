@@ -22,7 +22,7 @@ ARG PY_IMAGE=python:3.11-slim-bookworm
 # ---------------------------------------------------------------------------
 # Stage 1: build the Next.js frontend (standalone output)
 # ---------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS frontend-build
+FROM node:22.23.4-bookworm-slim AS frontend-build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
@@ -65,7 +65,7 @@ RUN mkdir -p prisma-engine \
 # ---------------------------------------------------------------------------
 # Stage 2: build the backend virtualenv (CPU wheels)
 # ---------------------------------------------------------------------------
-FROM ${PY_IMAGE} AS backend-build
+FROM python:3.11-slim-bookworm AS backend-build
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -88,16 +88,16 @@ COPY backend/transitions/ ./transitions/
 # ---------------------------------------------------------------------------
 # Stage 3: runtime — everything in one container
 # ---------------------------------------------------------------------------
-FROM ${PY_IMAGE} AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 ARG NODE_IMAGE
 
 # Node.js runtime for the Next.js standalone server (same distro as the
 # node image, so the binary just works).
-COPY --from=${NODE_IMAGE} /usr/local/bin/node /usr/local/bin/node
-COPY --from=${NODE_IMAGE} /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=${NODE_IMAGE} /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=${NODE_IMAGE} /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node:22.23.4-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22.23.4-bookworm-slim /usr/local/bin/npm /usr/local/bin/npm
+COPY --from=node:22.23.4-bookworm-slim /usr/local/bin/npx /usr/local/bin/npx
+COPY --from=node:22.23.4-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
