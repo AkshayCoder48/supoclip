@@ -62,6 +62,13 @@ RUN mkdir -p prisma-engine \
     && cp src/generated/prisma/libquery_engine-*.so.node prisma-engine/ \
     && cp server-request-timeout.cjs server-request-timeout.runtime.cjs
 
+# Prisma CLI for the runtime stage (entrypoint baselining + migrate deploy).
+# Installed with a prefix so it can be copied wholesale into the runtime
+# image WITHOUT needing npm there. Keep the version in sync with
+# frontend/package.json ("prisma": "^6.19.2").
+RUN npm_config_prefix=/opt/prisma-cli npm install -g prisma@6.19.2 \
+    && /opt/prisma-cli/bin/prisma --version
+
 # ---------------------------------------------------------------------------
 # Stage 2: build the backend virtualenv (CPU wheels)
 # ---------------------------------------------------------------------------
@@ -90,14 +97,12 @@ COPY backend/transitions/ ./transitions/
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim-bookworm AS runtime
 
-ARG NODE_IMAGE
-
 # Node.js runtime for the Next.js standalone server (same distro as the
-# node image, so the binary just works).
+# node image, so the binary just works). NOTE: only the node binary is
+# copied — copying the npm/npx symlinks dereferences them and breaks their
+# relative requires. The prisma CLI (the only other node tool needed at
+# runtime) comes from the frontend stage under /opt/prisma-cli.
 COPY --from=node:22.23.4-bookworm-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:22.23.4-bookworm-slim /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=node:22.23.4-bookworm-slim /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=node:22.23.4-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -111,11 +116,10 @@ RUN apt-get update \
 # Deno: required by yt-dlp for YouTube's JS player challenge.
 RUN curl -fsSL https://deno.land/install.sh | sh
 ENV DENO_DIR=/root/.deno
-ENV PATH=/root/.deno/bin:/usr/local/bin:$PATH
+ENV PATH=/opt/prisma-cli/bin:/root/.deno/bin:/usr/local/bin:$PATH
 
-# Prisma CLI used by the entrypoint for migration baselining/deploy.
-# Keep the version in sync with frontend/package.json ("prisma": "6.x.y").
-RUN npm install -g prisma@6.19.2 && prisma --version
+# Prisma CLI copied from the frontend stage (npm-less install).
+COPY --from=frontend-build /opt/prisma-cli /opt/prisma-cli
 
 # Backend application (venv paths are absolute: /app must stay /app).
 WORKDIR /app
