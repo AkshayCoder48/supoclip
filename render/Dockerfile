@@ -141,6 +141,7 @@ COPY init.sql /supoclip-init/init.sql
 # All-in-one runtime configuration.
 COPY render/nginx.conf /render/nginx.conf.template
 COPY render/supervisord.conf /render/supervisord.conf
+COPY render/worker.conf /render/worker.conf
 COPY render/entrypoint.sh /render/entrypoint.sh
 
 RUN mkdir -p /data /run/supoclip \

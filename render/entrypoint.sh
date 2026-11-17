@@ -107,26 +107,33 @@ PGCONF
 
     # Prisma baselining: init.sql IS the current baseline, so record every
     # shipped migration as applied instead of replaying non-idempotent SQL.
+    # Rows are inserted directly (checksum = sha256 of migration.sql, the
+    # format prisma uses) - spawning `prisma migrate resolve` once per
+    # migration costs ~10 s each on a throttled CPU and fails anyway when
+    # the table is missing prisma 6's newer columns.
     log "baselining Prisma migrations"
-    $PG_BIN/psql -h 127.0.0.1 -U postgres -d supoclip -c '
+    $PG_BIN/psql -h 127.0.0.1 -U postgres -d supoclip -v ON_ERROR_STOP=1 <<'PSQL'
         CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
             id VARCHAR(36) PRIMARY KEY NOT NULL,
             checksum VARCHAR(64) NOT NULL,
             finished_at TIMESTAMPTZ,
             migration_name VARCHAR(255) NOT NULL,
             logs TEXT,
+            rolled_back_at TIMESTAMPTZ,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             applied_steps_count INTEGER NOT NULL DEFAULT 0
-        );'
-    set +e
+        );
+PSQL
     for m in /app-frontend/prisma/migrations/*/; do
         name=$(basename "$m")
         [ -f "$m/migration.sql" ] || continue
-        (cd /app-frontend && \
-         DATABASE_URL="postgresql://supoclip@127.0.0.1:5432/supoclip" \
-         prisma migrate resolve --applied "$name") \
-            || log "WARN: prisma resolve failed for $name (continuing)"
+        checksum=$(sha256sum "$m/migration.sql" | cut -d' ' -f1)
+        $PG_BIN/psql -h 127.0.0.1 -U postgres -d supoclip -q -c \
+            "INSERT INTO \"_prisma_migrations\" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count) \
+             SELECT gen_random_uuid()::text, '$checksum', now(), '$name', NULL, NULL, now(), 1 \
+             WHERE NOT EXISTS (SELECT 1 FROM \"_prisma_migrations\" WHERE migration_name = '$name')" \
+            || log "WARN: could not record migration $name (continuing)"
     done
-    set -e
 
     log "stopping temporary PostgreSQL"
     pg_as_postgres "$PG_BIN/pg_ctl -D $PGDATA -w -t 60 -m fast stop"
@@ -141,9 +148,15 @@ fi
 # --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-# 5. Optional AI worker, nginx with real $PORT, then supervisord.
+# 5. Optional processes (video worker, AI worker) selected by env vars, then
+#    nginx with real $PORT and supervisord.
 # --------------------------------------------------------------------------
 mkdir -p /render/programs
+if [ "${ENABLE_VIDEO_WORKER:-1}" != "0" ]; then
+    cp /render/worker.conf /render/programs/worker.conf
+else
+    log "video worker DISABLED (ENABLE_VIDEO_WORKER=0) - tasks will queue"
+fi
 if [ "${ENABLE_AI_WORKER:-0}" = "1" ]; then
     cp /render/ai-worker.conf /render/programs/ai-worker.conf
     log "AI worker enabled"
