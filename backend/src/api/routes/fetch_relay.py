@@ -55,38 +55,58 @@ def _validate(url: str, video_id: str) -> None:
 
 
 def _direct_download(url: str, dest: Path, video_id: str) -> Path:
-    """Straight yt-dlp download into dest. Raises with a readable message."""
+    """yt-dlp download into dest, trying a player-client ladder.
+    Raises with a readable message."""
     import yt_dlp
 
-    opts = {
-        "format": (f"bv*[height<={_MAX_HEIGHT}]+ba/"
-                   f"b[height<={_MAX_HEIGHT}]/b"),
-        "merge_output_format": "mp4",
-        "outtmpl": str(dest / f"{video_id}.%(ext)s"),
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-        "retries": 3,
-        "fragment_retries": 3,
-        "socket_timeout": 30,
-        "concurrent_fragment_downloads": 4,
-        "overwrites": True,
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-    }
-    if shutil.which("deno"):
-        opts["js_runtimes"] = {"deno": {}}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
-    for cand in sorted(dest.glob(f"{video_id}.*")):
-        if cand.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}:
-            return cand
-    raise RuntimeError("yt-dlp reported success but no media file found")
+    # android_vr / tv: no PO token, no JS challenge — best on datacenter IPs.
+    # "default" last: full client selection incl. web+deno.
+    clients = ["android_vr", "tv", "default"]
+    last_exc: Exception | None = None
+    for client in clients:
+        opts = {
+            "format": (f"bv*[height<={_MAX_HEIGHT}]+ba/"
+                       f"b[height<={_MAX_HEIGHT}]/b"),
+            "merge_output_format": "mp4",
+            "outtmpl": str(dest / f"{video_id}.%(ext)s"),
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "retries": 2,
+            "fragment_retries": 3,
+            "socket_timeout": 30,
+            "concurrent_fragment_downloads": 4,
+            "overwrites": True,
+            "http_headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        }
+        if client != "default":
+            opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+        if shutil.which("deno"):
+            opts["js_runtimes"] = {"deno": {}}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            for cand in sorted(dest.glob(f"{video_id}.*")):
+                if cand.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}:
+                    return cand
+            raise RuntimeError("yt-dlp reported success but no media file")
+        except Exception as exc:  # noqa: BLE001 - try next client
+            last_exc = exc
+            logger.warning("fetch-relay: client %s failed: %s",
+                           client, str(exc)[:200])
+            for stale in dest.glob(f"{video_id}.*"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+    raise RuntimeError(f"all clients failed; last: {last_exc}")
 
 
 @router.get("/status")
