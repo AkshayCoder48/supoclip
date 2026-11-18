@@ -61,8 +61,8 @@ def _direct_download(url: str, dest: Path, video_id: str) -> Path:
 
     # android_vr / tv: no PO token, no JS challenge — best on datacenter IPs.
     # "default" last: full client selection incl. web+deno.
-    clients = ["android_vr", "tv", "default"]
-    last_exc: Exception | None = None
+    clients = ["android_vr", "tv", "ios", "mweb", "tv_embedded", "default"]
+    errors: list[str] = []
     for client in clients:
         opts = {
             "format": (f"bv*[height<={_MAX_HEIGHT}]+ba/"
@@ -98,15 +98,15 @@ def _direct_download(url: str, dest: Path, video_id: str) -> Path:
                     return cand
             raise RuntimeError("yt-dlp reported success but no media file")
         except Exception as exc:  # noqa: BLE001 - try next client
-            last_exc = exc
             logger.warning("fetch-relay: client %s failed: %s",
                            client, str(exc)[:200])
+            errors.append(f"{client}: {str(exc)[:160]}")
             for stale in dest.glob(f"{video_id}.*"):
                 try:
                     stale.unlink()
                 except OSError:
                     pass
-    raise RuntimeError(f"all clients failed; last: {last_exc}")
+    raise RuntimeError(" | ".join(errors) or "all clients failed")
 
 
 @router.get("/status")
@@ -114,6 +114,49 @@ async def status(request: Request):
     if not _authorized(request):
         raise HTTPException(403, "unauthorized")
     return {"busy": _lock.locked(), "max_height": _MAX_HEIGHT}
+
+
+@router.post("/probe")
+async def probe(request: Request):
+    """Metadata-only probe per client: reports each client's error/status.
+    Used for diagnosing IP/flag issues without downloading media."""
+    if not _authorized(request):
+        raise HTTPException(403, "unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(422, "json body required") from None
+    url = str(body.get("url") or "")
+    _validate(url, str(body.get("video_id") or "x0x0x0x0x0x"))
+
+    import yt_dlp
+
+    def run_probe(client: str) -> dict:
+        opts = {
+            "quiet": True, "no_warnings": True, "noplaylist": True,
+            "skip_download": True, "socket_timeout": 20,
+            "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"},
+        }
+        if client != "default":
+            opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+        if shutil.which("deno"):
+            opts["js_runtimes"] = {"deno": {}}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            return {"client": client, "ok": True,
+                    "title": (info or {}).get("title"),
+                    "duration": (info or {}).get("duration")}
+        except Exception as exc:  # noqa: BLE001
+            return {"client": client, "ok": False,
+                    "error": str(exc)[:200]}
+
+    results = []
+    for client in ["android_vr", "tv", "ios", "mweb", "default"]:
+        results.append(await asyncio.to_thread(run_probe, client))
+    import yt_dlp as _ydl
+    return {"yt_dlp_version": _ydl.version.__version__,
+            "deno": bool(shutil.which("deno")), "results": results}
 
 
 @router.post("/download")
