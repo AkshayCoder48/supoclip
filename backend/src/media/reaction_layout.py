@@ -8,7 +8,7 @@ it. Otherwise leave the existing podcast, call, and content layouts in charge.
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 
 from .common import UPSCALE_SHARPEN_FILTER

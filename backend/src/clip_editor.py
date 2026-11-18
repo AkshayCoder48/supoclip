@@ -15,7 +15,7 @@ import uuid
 
 from .caption_templates import get_template
 from .workflows.language import is_no_space
-from .media.ffmpeg import ffmpeg_escape_filter_path, ffprobe_video_size
+from .media.ffmpeg import _x264_thread_args, ffmpeg_escape_filter_path, ffprobe_video_size
 from .media.source_limits import FPS_EPSILON, MAX_OUTPUT_FPS, probe_video_geometry
 from .video_utils import (
     ass_fonts_dir,
@@ -95,6 +95,7 @@ def _encode_args(audio_bitrate: str = "256k") -> list[str]:
         "slow",
         "-crf",
         "18",
+        *_x264_thread_args(),
         "-pix_fmt",
         "yuv420p",
         "-profile:v",
@@ -525,6 +526,7 @@ def export_with_preset(
         "slow",
         "-crf",
         "18",
+        *_x264_thread_args(),
         "-maxrate",
         preset.video_bitrate,
         "-bufsize",

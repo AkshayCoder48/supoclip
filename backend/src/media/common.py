@@ -24,9 +24,11 @@ import tempfile
 
 import time
 
-import cv2
-
-import assemblyai as aai
+# cv2 (~80 MB) and assemblyai load on first use: both API and worker
+# import this module at boot, and on small containers (Render free plan:
+# the whole stack shares 512 MB) eager imports leave no headroom.
+from .lazy_modules import assemblyai as aai
+from .lazy_modules import cv2
 
 import httpx
 
@@ -34,13 +36,32 @@ import srt
 
 from datetime import timedelta
 
-try:
-    import whisper as _whisper
+# openai-whisper is an optional transcription backend; importing it pulls
+# in torch (~300 MB RSS). Defer the import to first use so processes that
+# never transcribe locally (e.g. the API with a remote provider) stay lean.
+# ``_whisper_available`` is tri-state: None = import not attempted yet.
+_whisper = None
+_whisper_available = None
 
-    _WHISPER_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional transcription backend
-    _whisper = None
-    _WHISPER_AVAILABLE = False
+
+def _ensure_whisper():
+    """Import openai-whisper on first use. Returns the module or None."""
+    global _whisper, _whisper_available
+    if _whisper_available is None:
+        try:
+            import whisper as whisper_module
+
+            _whisper = whisper_module
+            _whisper_available = True
+        except ImportError:  # pragma: no cover - optional backend
+            _whisper_available = False
+    return _whisper
+
+# Legacy alias kept for re-export compatibility (video_utils imports it).
+# It stays None until something calls _ensure_whisper(); new code must not
+# branch on it - call _ensure_whisper() instead.
+_WHISPER_AVAILABLE = _whisper_available
+
 
 from ..config import get_config
 

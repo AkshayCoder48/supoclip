@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from collections import Counter
 from typing import Optional, Sequence
 
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)

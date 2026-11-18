@@ -50,3 +50,9 @@ services:
         value: "false"
       - key: ENABLE_AI_WORKER
         value: "0"
+      # One video at a time: the worker runs a single job at once so a
+      # render's peak memory never stacks with a second job's. The entrypoint
+      # also auto-sets this (plus YOUTUBE_MAX_HEIGHT=480 and
+      # FFMPEG_VIDEO_THREADS=1) on instances with <=512 MB of memory.
+      - key: WORKER_MAX_JOBS
+        value: "1"

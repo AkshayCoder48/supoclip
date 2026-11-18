@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 
 from .common import KENBURNS_FOCUS_Y, KENBURNS_ZOOM_DELTA, logger

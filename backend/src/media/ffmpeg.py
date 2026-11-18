@@ -9,6 +9,7 @@ from typing import Tuple
 from ..clip_source_map import normalize_source_ranges
 from ..config import get_config
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -308,6 +309,22 @@ def ffmpeg_escape_filter_path(path: Path) -> str:
 NO_CHAPTERS = ("-map_chapters", "-1")
 
 
+def _x264_thread_args():
+    """Optional per-encode thread cap from FFMPEG_VIDEO_THREADS.
+
+    x264 sizes its thread pool from the *host's* CPU count, not the container's
+    CPU limit. On a shared 512 MB instance that means dozens of threads with
+    their own lookahead buffers for a 0.1-CPU quota - pure memory waste, and
+    enough to tip the cgroup into the OOM killer. FFMPEG_VIDEO_THREADS=1
+    trades encode speed (irrelevant when the CPU is throttled anyway) for
+    tens of MB of headroom. Unset = ffmpeg's default behaviour.
+    """
+    threads = os.environ.get("FFMPEG_VIDEO_THREADS", "").strip()
+    if not threads:
+        return []
+    return ["-threads", threads]
+
+
 def build_final_video_encode_args(
     crf: int = FINAL_VIDEO_CRF,
     preset: str = FINAL_VIDEO_PRESET,
@@ -329,6 +346,7 @@ def build_final_video_encode_args(
         "-level", level,
         "-r", str(fps),
         "-x264-params", "keyint=120:min-keyint=30:scenecut=40",
+        *_x264_thread_args(),
     ]
 
 
@@ -572,6 +590,7 @@ def _range_inputs(
                 *audio_stream_map_args(audio_stream),
                 "-t", f"{length:.3f}",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", str(INTERMEDIATE_CRF),
+                *_x264_thread_args(),
                 "-pix_fmt", "yuv420p",
             ]
             if audio_stream is not None:
@@ -705,6 +724,7 @@ def render_ranges_crossfade_ffmpeg(
             *map_args,
             *NO_CHAPTERS,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(INTERMEDIATE_CRF),
+            *_x264_thread_args(),
             "-pix_fmt", "yuv420p",
         ]
         if has_audio:
@@ -778,6 +798,7 @@ def render_source_ranges_ffmpeg(
             "veryfast",
             "-crf",
             str(INTERMEDIATE_CRF),
+            *_x264_thread_args(),
             "-pix_fmt",
             "yuv420p",
             "-c:a",
@@ -853,6 +874,7 @@ def render_source_ranges_ffmpeg(
             "veryfast",
             "-crf",
             str(INTERMEDIATE_CRF),
+            *_x264_thread_args(),
             "-pix_fmt",
             "yuv420p",
         ]
@@ -883,6 +905,7 @@ def burn_ass_subtitles_ffmpeg(
         "fast",
         "-crf",
         "20",
+        *_x264_thread_args(),
         "-pix_fmt",
         "yuv420p",
         "-c:a",

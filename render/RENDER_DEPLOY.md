@@ -85,12 +85,14 @@ one of:
 
 | Variable | Default | Notes |
 |---|---|---|
-| `YOUTUBE_MAX_HEIGHT` | `720` | raise to `1080` on ≥2 GB plans |
+| `YOUTUBE_MAX_HEIGHT` | `720` | raise to `1080` on ≥2 GB plans; auto-clamped to `480` on ≤512 MB instances |
 | `MAX_VIDEO_DURATION` | `2700` | source length cap in seconds |
 | `MAX_CLIPS` | `6` | matches the GTA6 agency's max |
 | `DISABLE_SIGN_UP` | `false` | set to `true` after creating your account |
 | `ENABLE_AI_WORKER` | `0` | AI editor queue (adds RAM) |
 | `TRANSCRIPTION_PROVIDER` | `assemblyai` | or `whisper` (local, slower, no key) / `youtube_captions` |
+| `WORKER_MAX_JOBS` | `4` (`1` on ≤512 MB) | **one video at a time** when `1`: the worker runs a single job — render, editor export or publish — so peak memory never stacks. Auto-set by the entrypoint on small instances |
+| `FFMPEG_VIDEO_THREADS` | unset (`1` on ≤512 MB) | caps x264's thread pool (sized from the *host's* cores, not the container quota); auto-set on small instances |
 
 Secrets (`BETTER_AUTH_SECRET`, `BACKEND_AUTH_SECRET`,
 `APP_SETTINGS_ENCRYPTION_KEY`) are generated on first boot and stored at
@@ -123,6 +125,30 @@ Secrets (`BETTER_AUTH_SECRET`, `BACKEND_AUTH_SECRET`,
 A 1080p render (ffmpeg + face detection + caption burn-in) spikes well past
 512 MB. The image defaults (`YOUTUBE_MAX_HEIGHT=720`, `MAX_CLIPS=6`,
 `DATABASE_POOL_SIZE=3`, single worker) are chosen to fit ~2 GB.
+
+### One video at a time (512 MB plans)
+
+The entrypoint reads the container's cgroup memory limit at boot. On
+instances with ≤512 MB it logs `small instance detected` and sets, unless the
+dashboard overrides them:
+
+- `WORKER_MAX_JOBS=1` — the video worker runs **one job at a time**. A second
+  submitted video waits in the queue; editor exports and publishes queue
+  behind the running render too. Nothing is lost, and one render's peak
+  memory never stacks with another job's.
+- `YOUTUBE_MAX_HEIGHT=480` — sources are downloaded at 480p: the whole
+  download → transcribe → analyze → render pipeline scales with frame size.
+- `FFMPEG_VIDEO_THREADS=1` — x264 sizes its thread pool from the host's CPU
+  count (dozens on Render's machines) while the container gets a fraction of
+  one core; one thread saves tens of MB and costs no real throughput.
+
+The image also defers its heaviest imports (openai-whisper/torch ~300 MB,
+cv2, assemblyai) until a job first needs them, so an idle instance boots far
+below the limit. Per-account concurrency is additionally capped at 1 by
+`VIDEO_JOB_USER_CONCURRENCY` (default 1).
+
+To run more than one render concurrently, upgrade the plan and set
+`WORKER_MAX_JOBS=2` (or higher) in the dashboard.
 
 ### Keep-alive polling
 

@@ -6,7 +6,7 @@ from typing import List
 from typing import Optional
 from pathlib import Path
 from typing import Tuple
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 import re
 import shutil

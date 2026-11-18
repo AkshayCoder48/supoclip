@@ -18,6 +18,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .media.ffmpeg import _x264_thread_args
+
 BROLL_MIN_SECONDS = 0.2
 BROLL_CONTINUATION_MIN_SECONDS = 0.04
 BROLL_FADE_SECONDS = 0.25
@@ -567,6 +569,7 @@ def render_document(
         "fast",
         "-crf",
         "18",
+        *_x264_thread_args(),
         "-maxrate",
         "12M" if preset == "reels" else "10M",
         "-bufsize",

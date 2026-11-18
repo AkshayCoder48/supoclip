@@ -3,6 +3,7 @@ Worker tasks - background jobs processed by arq workers.
 """
 
 import logging
+import os
 from typing import Dict, Any, Optional
 import json
 from arq import Retry
@@ -373,7 +374,14 @@ class WorkerSettings:
 
     # Worker pool settings. Cron jobs live on CronWorkerSettings so they never
     # take one of these slots or pile up behind a long render.
-    max_jobs = 4  # Process up to 4 jobs simultaneously
+    #
+    # WORKER_MAX_JOBS=1 serializes the queue - ONE video at a time - so a
+    # render's peak memory never stacks with a second job's (editor exports,
+    # clip re-encodes, publishes). Required on 512 MB instances where two
+    # concurrent renders trigger the cgroup OOM killer and take the whole
+    # stack (PostgreSQL, frontend, ...) down with it. Default keeps the
+    # upstream behaviour.
+    max_jobs = max(1, int(os.getenv("WORKER_MAX_JOBS", "4")))  # jobs at once
     cron_jobs = []
 
     from .queue_delay import on_video_job_start as on_job_start

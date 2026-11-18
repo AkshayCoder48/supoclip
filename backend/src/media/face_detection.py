@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional, Tuple
 
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 
 from .common import logger

@@ -18,7 +18,7 @@ from ..font_registry import get_font_family_name
 from ..caption_templates import get_template
 from ..clip_source_map import normalize_source_ranges
 from ..emoji_captions import normalize_token
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 import tempfile
 from .common import (

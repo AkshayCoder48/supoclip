@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import subprocess
 
-import cv2
+from .lazy_modules import cv2
 import numpy as np
 
 from .common import FACE_PRESENCE_MIN_AREA, UPSCALE_SHARPEN_FILTER, VERTICAL_SCALE_CHAIN, logger

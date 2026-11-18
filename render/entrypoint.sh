@@ -70,6 +70,33 @@ export PRISMA_QUERY_ENGINE_LIBRARY="/app-frontend/prisma-engine/libquery_engine-
 ENV
 
 # --------------------------------------------------------------------------
+# 2b. Small-instance autotuning (one video at a time).
+#
+# Render's free and starter plans give the WHOLE stack (PostgreSQL + Redis +
+# backend + worker + frontend + nginx) a 512 MB cgroup. Two concurrent video
+# jobs - or one render with x264's host-sized thread pool - push it over and
+# Render kills the instance. Read the cgroup memory limit and, on small
+# instances, clamp the peak-memory knobs unless the dashboard set them
+# explicitly. Larger plans keep the image defaults.
+# --------------------------------------------------------------------------
+CGROUP_MEM=""
+if [ -r /sys/fs/cgroup/memory.max ]; then
+    CGROUP_MEM=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "")
+elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+    CGROUP_MEM=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
+fi
+case "$CGROUP_MEM" in
+    ""|*[!0-9]*) CGROUP_MEM="" ;;   # empty, "max", or unparsable
+    *) ;;
+esac
+if [ -n "$CGROUP_MEM" ] && [ "$CGROUP_MEM" -le 536870912 ]; then
+    log "small instance detected (${CGROUP_MEM} byte memory limit) - one render at a time"
+    export WORKER_MAX_JOBS="${WORKER_MAX_JOBS:-1}"
+    export YOUTUBE_MAX_HEIGHT="${YOUTUBE_MAX_HEIGHT:-480}"
+    export FFMPEG_VIDEO_THREADS="${FFMPEG_VIDEO_THREADS:-1}"
+fi
+
+# --------------------------------------------------------------------------
 # 3. First-boot database bootstrap.
 #    PostgreSQL runs with local trust auth (it binds 127.0.0.1 only and the
 #    container is single-tenant), so no password is needed.

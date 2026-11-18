@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
-import cv2
+from ..media.lazy_modules import cv2
 import numpy as np
 import requests
 
