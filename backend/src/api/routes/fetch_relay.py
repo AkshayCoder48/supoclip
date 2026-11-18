@@ -35,6 +35,20 @@ _ALLOWED_HOSTS = ("youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com")
 
 _MAX_HEIGHT = max(144, min(int(os.getenv("YOUTUBE_MAX_HEIGHT", "720") or 720), 1080))
 
+_COOKIES_PATH = Path("/tmp/relay_cookies.txt")
+
+
+def _cookies_file() -> str | None:
+    """Operator-exported cookies (Netscape format) from the YT_COOKIES env
+    var. Never logged, never returned to clients."""
+    content = os.getenv("YT_COOKIES", "").strip()
+    if not content:
+        return None
+    if not _COOKIES_PATH.exists() or _COOKIES_PATH.read_text() != content:
+        _COOKIES_PATH.write_text(content)
+        _COOKIES_PATH.chmod(0o600)
+    return str(_COOKIES_PATH)
+
 
 def _authorized(request: Request) -> bool:
     token = os.getenv("FETCH_RELAY_TOKEN", "")
@@ -88,6 +102,9 @@ def _direct_download(url: str, dest: Path, video_id: str) -> Path:
         }
         if client != "default":
             opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+        cookies = _cookies_file()
+        if cookies:
+            opts["cookiefile"] = cookies
         if shutil.which("deno"):
             opts["js_runtimes"] = {"deno": {}}
         try:
@@ -113,7 +130,8 @@ def _direct_download(url: str, dest: Path, video_id: str) -> Path:
 async def status(request: Request):
     if not _authorized(request):
         raise HTTPException(403, "unauthorized")
-    return {"busy": _lock.locked(), "max_height": _MAX_HEIGHT}
+    return {"busy": _lock.locked(), "max_height": _MAX_HEIGHT,
+            "cookies": bool(os.getenv("YT_COOKIES", "").strip())}
 
 
 @router.post("/probe")
@@ -139,6 +157,9 @@ async def probe(request: Request):
         }
         if client != "default":
             opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+        cookies = _cookies_file()
+        if cookies:
+            opts["cookiefile"] = cookies
         if shutil.which("deno"):
             opts["js_runtimes"] = {"deno": {}}
         try:
